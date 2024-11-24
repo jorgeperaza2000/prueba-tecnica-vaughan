@@ -2,131 +2,163 @@
 
 namespace Tests\Feature\Api\v1;
 
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class shortUrlsTest extends TestCase
 {
+    const ENDPOINT = 'short-urls';
+    const HEADER_BLANK = [];
+    const HEADER_WITHOUT_BEARER = ['Authorization' => 'token-without-bearer'];
+    const HEADER_BLANK_TOKEN = ['Authorization' => 'Bearer '];
+    const HEADER_VALID_TOKEN = [
+        ['Authorization' => 'Bearer '],
+        ['Authorization' => 'Bearer {}'],
+        ['Authorization' => 'Bearer {}[]()'],
+        ['Authorization' => 'Bearer {([])}'],
+    ];
+    const HEADER_INVALID_TOKEN = [
+        ['Authorization' => 'Bearer {invalid]-token}'],
+        ['Authorization' => 'Bearer {)'],
+        ['Authorization' => 'Bearer [{]}'],
+        ['Authorization' => 'Bearer (((((((()'],
+    ];
+
     public function testHeaderAuthorizationIsMissing(): void
     {
-        $response = $this->withHeaders([])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
+        $data = ['url' => 'http://example.com'];
 
-        $response->assertStatus(401);
-        $response->assertJsonValidationErrors(['Authorization']);
-    }
+        $response = $this->makePostRequestV1(
+            $this::ENDPOINT,
+            $this::HEADER_BLANK,
+            $data
+        );
 
-    public function testHeaderAuthorizationIsInvalid(): void
-    {
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer {invalid]-token}',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
-
-        $response->assertStatus(401);
-        $response->assertJsonValidationErrors(['Authorization']);
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['Authorization' => 'The Authorization header is missing.']);
     }
 
     public function testHeaderAuthorizationDoesNotIncludeBearerWordAtStart(): void
     {
-        $response = $this->withHeaders([
-            'Authorization' => 'toket-without-bearer',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
+        $data = ['url' => 'http://example.com'];
 
-        $response->assertStatus(401);
-        $response->assertJsonValidationErrors(['Authorization']);
+        $response = $this->makePostRequestV1(
+            $this::ENDPOINT,
+            $this::HEADER_WITHOUT_BEARER,
+            $data
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['Authorization' => 'The Authorization header is invalid.']);
     }
 
     public function testHeaderAuthorizationBlankIsValid(): void
     {
-        $response = $this->withHeaders([
-            'Authorization' => '',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
+        $data = ['url' => 'http://example.com'];
+
+        $response = $this->makePostRequestV1(
+            $this::ENDPOINT,
+            $this::HEADER_BLANK_TOKEN,
+            $data
+        );
 
         $response->assertStatus(200);
+        $response->assertJsonStructure(['url']);
     }
 
-    public function testHeaderAuthorizationIsValid_one(): void
+    public function testHeaderAuthorizationIsValid(): void
     {
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer {}[]()',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
+        $data = ['url' => 'http://example.com'];
 
-        $response->assertStatus(200);
+        foreach ($this::HEADER_VALID_TOKEN as $validToken) {
+            $response = $this->makePostRequestV1(
+                $this::ENDPOINT,
+                $validToken,
+                $data
+            );
+
+            $response->assertStatus(200);
+            $response->assertJsonStructure(['url']);
+        }
     }
 
-    public function testHeaderAuthorizationIsValid_two(): void
+    public function testHeaderAuthorizationIsInvalid(): void
     {
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer {}',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
+        $data = ['url' => 'http://example.com'];
 
-        $response->assertStatus(200);
-    }
+        foreach ($this::HEADER_INVALID_TOKEN as $invalidToken) {
+            $response = $this->makePostRequestV1(
+                $this::ENDPOINT,
+                $invalidToken,
+                $data
+            );
 
-    public function testHeaderAuthorizationIsValid_three(): void
-    {
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer {([])}',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
-
-        $response->assertStatus(200);
-    }
-
-    public function testHeaderAuthorizationInvalid_one(): void
-    {
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer {)',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
-        ]);
-
-        $response->assertStatus(401);
-        $response->assertJsonValidationErrors(['Authorization']);
+            $response->assertStatus(422);
+            $response->assertJsonValidationErrors(['Authorization' => 'The Authorization token is invalid.']);
+        }
     }
 
     public function testUrlIsRequired(): void
     {
-        $response = $this->withHeaders([
-            'Authorization' => '',
-        ])->postJson($this->API_V1_PATH . '/short-urls', []);
+        $data = [];
+
+        $response = $this->makePostRequestV1(
+            $this::ENDPOINT,
+            $this::HEADER_BLANK_TOKEN,
+            $data
+        );
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['url']);
+        $response->assertJsonValidationErrors(['url' => 'The url field is required.']);
     }
 
     public function testUrlMustBeValid(): void
     {
-        $response = $this->withHeaders([
-            'Authorization' => '',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'invalid-url',
-        ]);
+        $data = ['url' => 'invalid-url'];
+
+        $response = $this->makePostRequestV1(
+            $this::ENDPOINT,
+            $this::HEADER_BLANK_TOKEN,
+            $data
+        );
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['url']);
+        $response->assertJsonValidationErrors(['url' => 'The url field must be a valid URL.']);
     }
 
     public function testUrlIsValid(): void
     {
-        $response = $this->withHeaders([
-            'Authorization' => '',
-        ])->postJson($this->API_V1_PATH . '/short-urls', [
-            'url' => 'http://example.com',
+        Http::fake([
+            'https://tinyurl.com/api-create.php*' => Http::response('https://tinyurl.com/abc123', 200),
         ]);
 
+        $data = ['url' => 'http://example.com'];
+
+        $response = $this->makePostRequestV1(
+            $this::ENDPOINT,
+            $this::HEADER_BLANK_TOKEN,
+            $data
+        );
+
         $response->assertStatus(200);
-        $response->assertJsonStructure(['url']);
+        $response->assertJson(['url' => 'https://tinyurl.com/abc123']);
+    }
+
+    public function testUrlIsValidButResponseWithError(): void
+    {
+        Http::fake([
+            'https://tinyurl.com/api-create.php*' => Http::response('error', 500),
+        ]);
+
+        $data = ['url' => 'http://example.com'];
+
+        $response = $this->makePostRequestV1(
+            $this::ENDPOINT,
+            $this::HEADER_BLANK_TOKEN,
+            $data
+        );
+
+        $response->assertStatus(500);
+        $response->assertJsonStructure(['error']);
     }
 }
